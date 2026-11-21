@@ -1,0 +1,33 @@
+# Switch 2 build environment: devkitPro's devkitA64 image (devkitA64, libnx, switch-tools, CMake toolchains) plus the
+# ounce devkit (libounce, OunceVK, libkaihen) from https://pkg.ouncebrew.org.
+#
+# The same as ounce-devkit's Dockerfile, except that the ounce packages are installed by file (pacman -U, signatures
+# checked against the [ounce] key) instead of with `pacman -Sy`, which would also refresh devkitPro's package lists:
+# devkitPro's servers are not reachable from every network, and the image already holds everything libounce needs.
+#
+#   podman build -t fnv-ounce -f tools/switch2/Containerfile tools/switch2
+#   podman run --rm -v "$PWD:/src" -w /src fnv-ounce <command>
+FROM docker.io/devkitpro/devkita64:20260219
+
+ARG REPO=https://pkg.ouncebrew.org
+ARG KEY=DFEAE7FA965D1E6C0D41D4D75DB9FDBFA4A4DE29
+ARG VERSION=20261117.1-1
+
+RUN apt-get update && \
+    apt-get install -y --no-install-recommends curl ca-certificates python3 bison flex libjson-perl && \
+    rm -rf /var/lib/apt/lists/*
+
+RUN set -eu; cd /tmp; \
+    curl -fsSL -o ounce.gpg "$REPO/ounce.gpg"; \
+    dkp-pacman-key --add ounce.gpg; \
+    dkp-pacman-key --lsign-key "$KEY"; \
+    for p in libounce ouncevk libkaihen; do \
+        f="$p-$VERSION-any.pkg.tar.zst"; \
+        curl -fsSL -o "$f" "$REPO/$f"; \
+        curl -fsSL -o "$f.sig" "$REPO/$f.sig"; \
+    done; \
+    dkp-pacman -U --noconfirm --overwrite '/opt/devkitpro/libounce/*' --overwrite '/opt/devkitpro/portlibs/switch2/*' \
+        --overwrite /opt/devkitpro/switch2vars.sh \
+        libounce-$VERSION-any.pkg.tar.zst ouncevk-$VERSION-any.pkg.tar.zst libkaihen-$VERSION-any.pkg.tar.zst; \
+    dkp-pacman -Q libounce ouncevk libkaihen; \
+    rm -f /tmp/*.pkg.tar.zst* /tmp/ounce.gpg
